@@ -2,9 +2,9 @@ import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 
-# ==============================
+# ==========================================
 # 設定
-# ==============================
+# ==========================================
 
 QUERIES = [
     "ニュース",
@@ -20,14 +20,11 @@ QUERIES = [
 ]
 
 DAYS = 7
-
-# 1キーワードにつき検索する動画数
 RESULTS_PER_QUERY = 10
 
-
-# ==============================
+# ==========================================
 # 日付
-# ==============================
+# ==========================================
 
 now = datetime.now(timezone.utc)
 limit_date = now - timedelta(days=DAYS)
@@ -37,13 +34,15 @@ print("YouTube動画収集開始")
 print("対象期間:", limit_date.strftime("%Y-%m-%d"), "以降")
 print("================================")
 
-
-# ==============================
-# 動画検索
-# ==============================
+# ==========================================
+# 動画を保存する場所
+# ==========================================
 
 videos = {}
 
+# ==========================================
+# YouTube検索
+# ==========================================
 
 for query in QUERIES:
 
@@ -73,7 +72,7 @@ for query in QUERIES:
         )
 
         if result.stderr:
-            print("検索メッセージ:")
+            print("yt-dlpメッセージ:")
             print(result.stderr[:2000])
 
         search_results = []
@@ -96,20 +95,25 @@ for query in QUERIES:
                 (video_id, title, url)
             )
 
-        print("検索結果:", len(search_results), "本")
+        print(
+            "検索結果:",
+            len(search_results),
+            "本"
+        )
 
-
-        # ==============================
+        # ==========================================
         # 各動画の詳細情報を取得
-        # ==============================
+        # ==========================================
 
         for video_id, search_title, url in search_results:
 
-            # すでに取得済みならスキップ
             if video_id in videos:
                 continue
 
-            print("詳細取得:", search_title[:50])
+            print(
+                "詳細取得:",
+                search_title[:50]
+            )
 
             detail_command = [
                 "yt-dlp",
@@ -149,8 +153,10 @@ for query in QUERIES:
                         webpage_url
                     ) = parts[:9]
 
-                    # 投稿日が取得できなければスキップ
-                    if not upload_date or len(upload_date) != 8:
+                    if not upload_date:
+                        continue
+
+                    if len(upload_date) != 8:
                         continue
 
                     try:
@@ -166,7 +172,7 @@ for query in QUERIES:
 
                         continue
 
-                    # 7日より古い動画は除外
+                    # 7日より古い動画を除外
                     if upload_dt < limit_date:
                         continue
 
@@ -175,7 +181,7 @@ for query in QUERIES:
                         try:
                             return int(value)
 
-                        except:
+                        except (ValueError, TypeError):
                             return 0
 
                     videos[video_id2] = {
@@ -197,7 +203,9 @@ for query in QUERIES:
 
             except subprocess.TimeoutExpired:
 
-                print("  → タイムアウト")
+                print(
+                    "  → 詳細取得タイムアウト"
+                )
 
             except Exception as e:
 
@@ -206,23 +214,34 @@ for query in QUERIES:
                     e
                 )
 
+    except subprocess.TimeoutExpired:
 
-# ==============================
-# 結果整理
-# ==============================
+        print(
+            "検索タイムアウト:",
+            query
+        )
+
+    except Exception as e:
+
+        print(
+            "検索エラー:",
+            e
+        )
+
+# ==========================================
+# 結果を整理
+# ==========================================
 
 output = list(videos.values())
 
-# 再生数順
 output.sort(
     key=lambda x: x["view_count"],
     reverse=True
 )
 
-
-# ==============================
-# 保存
-# ==============================
+# ==========================================
+# videos.json に保存
+# ==========================================
 
 with open(
     "videos.json",
@@ -237,10 +256,9 @@ with open(
         indent=2
     )
 
-
-# ==============================
+# ==========================================
 # 結果表示
-# ==============================
+# ==========================================
 
 print("")
 print("================================")
