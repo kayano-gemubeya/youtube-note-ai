@@ -1,12 +1,12 @@
-name: YouTube収集テスト
+name: YouTube動画収集・ランキング
 
 on:
   workflow_dispatch:
-    schedule:
+  schedule:
     - cron: "0 0 * * *"
 
 jobs:
-  collect:
+  collect-and-rank:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,13 +27,19 @@ jobs:
         run: |
           python collect.py
 
-      - name: 取得結果を表示
+      - name: 動画をランキング
         run: |
-          echo "===== 取得結果 ====="
-          python -c "import json; d=json.load(open('videos.json', encoding='utf-8')); print('取得件数:', len(d)); [print(x['title'], x['view_count']) for x in d[:10]]"
+          python rank.py
 
-      - name: videos.jsonを保存
+      - name: 結果を表示
+        run: |
+          echo "===== AI候補 ====="
+          python -c "import json; d=json.load(open('candidates.json', encoding='utf-8')); print('候補数:', len(d)); [print(f\"{i+1}. {x['title']} | score={x['score']}\") for i,x in enumerate(d)]"
+
+      - name: 結果を保存
         uses: actions/upload-artifact@v4
         with:
-          name: youtube-videos
-          path: videos.json
+          name: youtube-candidates
+          path: |
+            videos.json
+            candidates.json
