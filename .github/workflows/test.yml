@@ -22,6 +22,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install yt-dlp
+          - name: YouTubeへの接続テスト
+  run: |
+    python -c "import urllib.request; print(urllib.request.urlopen('https://www.youtube.com', timeout=20).status)"
 
       - name: YouTube動画を収集
         run: |
