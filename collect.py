@@ -44,6 +44,9 @@ for query in QUERIES:
             text=True,
             timeout=120
         )
+        print("===== yt-dlp 標準エラー =====")
+print(result.stderr)
+print("==============================")
 
         for line in result.stdout.splitlines():
             parts = line.split("\t")
