@@ -1,0 +1,37 @@
+name: YouTube収集テスト
+
+on:
+  workflow_dispatch:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Pythonをセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: yt-dlpをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp
+
+      - name: YouTube動画を収集
+        run: |
+          python collect.py
+
+      - name: 取得結果を表示
+        run: |
+          echo "===== 取得結果 ====="
+          python -c "import json; d=json.load(open('videos.json', encoding='utf-8')); print('取得件数:', len(d)); [print(x['title'], x['view_count']) for x in d[:10]]"
+
+      - name: videos.jsonを保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-videos
+          path: videos.json
