@@ -22,9 +22,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install yt-dlp
-          - name: YouTubeへの接続テスト
-  run: |
-    python -c "import urllib.request; print(urllib.request.urlopen('https://www.youtube.com', timeout=20).status)"
+
+      - name: YouTubeへの接続テスト
+        run: |
+          python -c "import urllib.request; print(urllib.request.urlopen('https://www.youtube.com', timeout=20).status)"
 
       - name: YouTube動画を収集
         run: |
@@ -37,7 +38,7 @@ jobs:
       - name: 結果を表示
         run: |
           echo "===== AI候補 ====="
-          python -c "import json; d=json.load(open('candidates.json', encoding='utf-8')); print('候補数:', len(d)); [print(f\"{i+1}. {x['title']} | score={x['score']}\") for i,x in enumerate(d)]"
+          python -c "import json; d=json.load(open('candidates.json', encoding='utf-8')); print('候補数:', len(d)); [print(f'{i+1}. {x[\"title\"]} | score={x[\"score\"]}') for i,x in enumerate(d)]"
 
       - name: 結果を保存
         uses: actions/upload-artifact@v4
