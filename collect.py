@@ -2,7 +2,7 @@ import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 
-# 検索するジャンル・キーワード
+# 検索するキーワード
 QUERIES = [
     "ニュース",
     "科学",
@@ -16,16 +16,27 @@ QUERIES = [
     "ドキュメンタリー",
 ]
 
+# 直近何日間の動画を対象にするか
 DAYS = 7
+
+# 1キーワードあたりの検索数
 RESULTS_PER_QUERY = 20
 
+# 現在時刻
 now = datetime.now(timezone.utc)
+
+# 7日前
 limit_date = now - timedelta(days=DAYS)
 
+# 動画を保存する辞書
 videos = {}
 
 for query in QUERIES:
-    print(f"検索中: {query}")
+
+    print("")
+    print("================================")
+    print("検索:", query)
+    print("================================")
 
     command = [
         "yt-dlp",
@@ -38,17 +49,23 @@ for query in QUERIES:
     ]
 
     try:
+
         result = subprocess.run(
             command,
             capture_output=True,
             text=True,
             timeout=120
         )
-        print("===== yt-dlp 標準エラー =====")
-print(result.stderr)
-print("==============================")
 
+        # エラー内容をログに表示
+        if result.stderr:
+            print("===== yt-dlp メッセージ =====")
+            print(result.stderr)
+            print("=============================")
+
+        # 検索結果を処理
         for line in result.stdout.splitlines():
+
             parts = line.split("\t")
 
             if len(parts) < 9:
@@ -66,26 +83,37 @@ print("==============================")
                 url
             ) = parts[:9]
 
+            # 投稿日がない場合はスキップ
             if not upload_date or len(upload_date) != 8:
                 continue
 
             try:
+
                 upload_dt = datetime.strptime(
-                    upload_date, "%Y%m%d"
-                ).replace(tzinfo=timezone.utc)
+                    upload_date,
+                    "%Y%m%d"
+                ).replace(
+                    tzinfo=timezone.utc
+                )
+
             except ValueError:
+
                 continue
 
+            # 7日より古い動画は除外
             if upload_dt < limit_date:
                 continue
 
+            # 数値に変換
             def to_int(value):
+
                 try:
                     return int(value)
+
                 except:
                     return 0
 
-            videos[video_id] = {
+            video = {
                 "video_id": video_id,
                 "title": title,
                 "channel": channel,
@@ -97,9 +125,19 @@ print("==============================")
                 "url": url,
             }
 
-    except Exception as e:
-        print(f"エラー: {e}")
+            # 同じ動画は1回だけ保存
+            videos[video_id] = video
 
+    except subprocess.TimeoutExpired:
+
+        print("検索がタイムアウトしました:", query)
+
+    except Exception as e:
+
+        print("エラーが発生しました:", e)
+
+
+# リストに変換
 output = list(videos.values())
 
 # 再生数の多い順
@@ -108,7 +146,13 @@ output.sort(
     reverse=True
 )
 
-with open("videos.json", "w", encoding="utf-8") as f:
+# JSONとして保存
+with open(
+    "videos.json",
+    "w",
+    encoding="utf-8"
+) as f:
+
     json.dump(
         output,
         f,
@@ -116,5 +160,18 @@ with open("videos.json", "w", encoding="utf-8") as f:
         indent=2
     )
 
-print(f"\n取得した動画数: {len(output)}")
-print("videos.json を作成しました。")
+
+print("")
+print("================================")
+print("動画収集完了")
+print("取得した動画数:", len(output))
+print("================================")
+
+# 上位10本を表示
+for i, video in enumerate(output[:10], 1):
+
+    print(
+        f"{i}. {video['title']} "
+        f"| {video['view_count']} views "
+        f"| {video['channel']}"
+    )
