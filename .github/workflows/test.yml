@@ -2,6 +2,7 @@ name: YouTube動画収集・ランキング
 
 on:
   workflow_dispatch:
+
   schedule:
     - cron: "0 0 * * *"
 
@@ -10,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: リポジトリを取得
         uses: actions/checkout@v4
 
@@ -18,16 +20,24 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: yt-dlpをインストール
+      - name: 必要なライブラリをインストール
         run: |
           python -m pip install --upgrade pip
-          pip install yt-dlp
+          pip install requests
 
-      - name: YouTubeへの接続テスト
+      - name: YouTube APIキーを確認
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
-          python -c "import urllib.request; print(urllib.request.urlopen('https://www.youtube.com', timeout=20).status)"
+          if [ -z "$YOUTUBE_API_KEY" ]; then
+            echo "YOUTUBE_API_KEY が設定されていません"
+            exit 1
+          fi
+          echo "YouTube APIキーを確認しました"
 
       - name: YouTube動画を収集
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           python collect.py
 
