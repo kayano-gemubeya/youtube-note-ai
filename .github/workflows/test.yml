@@ -25,6 +25,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
+      # ==========================================
+      # YouTube
+      # ==========================================
+
       - name: YouTube APIキーを確認
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -41,19 +45,59 @@ jobs:
         run: |
           python collect.py
 
+      # ==========================================
+      # ランキング
+      # ==========================================
+
       - name: 動画をランキング
         run: |
           python rank.py
 
-      - name: 結果を表示
+      - name: ランキング結果を表示
         run: |
           echo "===== AI候補 ====="
           python -c "import json; d=json.load(open('candidates.json', encoding='utf-8')); print('候補数:', len(d)); [print(f'{i+1}. {x[\"title\"]} | score={x[\"score\"]}') for i,x in enumerate(d)]"
 
+      # ==========================================
+      # Gemini AI
+      # ==========================================
+
+      - name: Gemini APIキーを確認
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY が設定されていません"
+            exit 1
+          fi
+          echo "Gemini APIキーを確認しました"
+
+      - name: AIで5本を選定
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python ai_select.py
+
+      # ==========================================
+      # 結果表示
+      # ==========================================
+
+      - name: AI選定結果を表示
+        run: |
+          echo "================================"
+          echo "AIが選んだ5本"
+          echo "================================"
+          python -c "import json; d=json.load(open('selected.json', encoding='utf-8')); print('選定数:', len(d)); [print(f'{i+1}. {x[\"title\"]} | {x.get(\"ai_reason\", \"\")}') for i,x in enumerate(d)]"
+
+      # ==========================================
+      # ファイル保存
+      # ==========================================
+
       - name: 結果を保存
         uses: actions/upload-artifact@v4
         with:
-          name: youtube-candidates
+          name: youtube-ai-results
           path: |
             videos.json
             candidates.json
+            selected.json
