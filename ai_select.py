@@ -141,7 +141,7 @@ Markdownの```は付けないでください。
 
 
 # ==========================================
-# Gemini API
+# Gemini Interactions API
 # ==========================================
 
 url = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -158,12 +158,23 @@ headers = {
 
 print("Geminiに候補を送信中...")
 
-response = requests.post(
-    url,
-    headers=headers,
-    json=payload,
-    timeout=120
-)
+try:
+
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=120
+    )
+
+except requests.RequestException as e:
+
+    print("Gemini API通信エラー:")
+    print(e)
+
+    raise RuntimeError(
+        "Gemini APIとの通信に失敗しました"
+    )
 
 
 # ==========================================
@@ -186,47 +197,98 @@ print("Gemini APIから正常に回答を受信しました")
 
 
 # ==========================================
-# Geminiの回答を取得
+# Geminiの回答テキストを取得
 #
-# Interactions APIでは
+# Gemini 3.6 Flash / Interactions API
 #
-# outputs
+# steps
 #   ↓
 # model_output
 #   ↓
 # content
 #   ↓
 # text
-#
-# という構造になっている
 # ==========================================
-
-outputs = data.get("outputs", [])
 
 text = None
 
-for output in outputs:
+steps = data.get("steps", [])
 
-    if output.get("type") == "model_output":
+for step in steps:
 
-        content = output.get("content", [])
+    if step.get("type") != "model_output":
+        continue
 
-        for item in content:
+    content = step.get("content", [])
 
-            if item.get("type") == "text":
+    if not isinstance(content, list):
+        continue
 
-                text = item.get("text")
+    for item in content:
 
+        if not isinstance(item, dict):
+            continue
+
+        if item.get("type") == "text":
+
+            candidate_text = item.get("text")
+
+            if candidate_text:
+                text = candidate_text
                 break
 
-        if text:
-            break
+    if text:
+        break
 
+
+# ==========================================
+# 念のため outputs 形式にも対応
+# ==========================================
 
 if not text:
 
-    print("Geminiから取得したデータ:")
+    outputs = data.get("outputs", [])
 
+    if isinstance(outputs, list):
+
+        for output in outputs:
+
+            if not isinstance(output, dict):
+                continue
+
+            if output.get("type") != "model_output":
+                continue
+
+            content = output.get("content", [])
+
+            if not isinstance(content, list):
+                continue
+
+            for item in content:
+
+                if not isinstance(item, dict):
+                    continue
+
+                if item.get("type") == "text":
+
+                    candidate_text = item.get("text")
+
+                    if candidate_text:
+                        text = candidate_text
+                        break
+
+            if text:
+                break
+
+
+# ==========================================
+# テキスト取得失敗
+# ==========================================
+
+if not text:
+
+    print("")
+    print("Geminiから取得したデータ:")
     print(
         json.dumps(
             data,
@@ -247,38 +309,58 @@ print("Geminiのテキスト回答を取得しました")
 # JSONとして解析
 # ==========================================
 
+cleaned_text = text.strip()
+
+
+# Markdownの```json が付いていた場合
+if cleaned_text.startswith("```json"):
+
+    cleaned_text = cleaned_text[7:].strip()
+
+elif cleaned_text.startswith("```"):
+
+    cleaned_text = cleaned_text[3:].strip()
+
+
+if cleaned_text.endswith("```"):
+
+    cleaned_text = cleaned_text[:-3].strip()
+
+
 try:
 
-    result = json.loads(text)
+    result = json.loads(cleaned_text)
 
 except json.JSONDecodeError:
 
-    # Markdownの```が万一付いていた場合に除去
-    cleaned_text = text.strip()
+    print("")
+    print("Geminiの回答:")
+    print(cleaned_text)
 
-    if cleaned_text.startswith("```json"):
-        cleaned_text = cleaned_text[7:]
+    raise RuntimeError(
+        "Geminiの回答をJSONとして読み取れませんでした"
+    )
 
-    elif cleaned_text.startswith("```"):
-        cleaned_text = cleaned_text[3:]
 
-    if cleaned_text.endswith("```"):
-        cleaned_text = cleaned_text[:-3]
+# ==========================================
+# selected確認
+# ==========================================
 
-    cleaned_text = cleaned_text.strip()
+if not isinstance(result, dict):
 
-    try:
+    raise RuntimeError(
+        "Geminiの回答がJSONオブジェクトではありません"
+    )
 
-        result = json.loads(cleaned_text)
 
-    except json.JSONDecodeError:
+selected_items = result.get("selected", [])
 
-        print("Geminiの回答:")
-        print(text)
 
-        raise RuntimeError(
-            "Geminiの回答をJSONとして読み取れませんでした"
-        )
+if not isinstance(selected_items, list):
+
+    raise RuntimeError(
+        "Geminiの回答に selected がありません"
+    )
 
 
 # ==========================================
@@ -287,7 +369,12 @@ except json.JSONDecodeError:
 
 selected = []
 
-for item in result.get("selected", []):
+used_numbers = set()
+
+for item in selected_items:
+
+    if not isinstance(item, dict):
+        continue
 
     number = item.get("candidate_number")
 
@@ -296,6 +383,12 @@ for item in result.get("selected", []):
 
     if number < 1 or number > len(videos):
         continue
+
+    # 同じ動画が重複した場合は除外
+    if number in used_numbers:
+        continue
+
+    used_numbers.add(number)
 
     video = videos[number - 1].copy()
 
@@ -308,13 +401,23 @@ for item in result.get("selected", []):
 
 
 # ==========================================
-# 5本まで
+# 最大5本
 # ==========================================
 
 selected = selected[:5]
 
 
 if not selected:
+
+    print("")
+    print("Geminiの回答:")
+    print(
+        json.dumps(
+            result,
+            ensure_ascii=False,
+            indent=2
+        )
+    )
 
     raise RuntimeError(
         "AIが動画を1本も選択しませんでした"
