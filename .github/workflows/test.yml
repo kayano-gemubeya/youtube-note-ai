@@ -66,6 +66,38 @@ jobs:
           echo "===== note記事 ====="
           cat article.md
 
+      - name: Gmailでnote記事を送信
+        env:
+          GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: |
+          python - <<'PY'
+          import os
+          import smtplib
+          from email.mime.text import MIMEText
+          from email.header import Header
+
+          gmail_username = os.environ["GMAIL_USERNAME"]
+          gmail_app_password = os.environ["GMAIL_APP_PASSWORD"]
+          mail_to = os.environ["MAIL_TO"]
+
+          with open("article.md", "r", encoding="utf-8") as f:
+              article = f.read()
+
+          msg = MIMEText(article, "plain", "utf-8")
+          msg["Subject"] = Header("今日の注目YouTube 5選", "utf-8")
+          msg["From"] = gmail_username
+          msg["To"] = mail_to
+
+          print("Gmailに接続しています...")
+
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+              server.login(gmail_username, gmail_app_password)
+              server.send_message(msg)
+
+          print("メール送信完了！")
+
       - name: 結果を保存
         uses: actions/upload-artifact@v4
         with:
