@@ -28,7 +28,7 @@ if not videos:
 
 
 # ==========================================
-# AIに渡すデータ
+# AIに渡すデータを作る
 # ==========================================
 
 video_text = []
@@ -52,6 +52,10 @@ for i, video in enumerate(videos, 1):
     )
 
 
+# ==========================================
+# Geminiへの指示
+# ==========================================
+
 prompt = """
 あなたはYouTube動画を発掘する編集者です。
 
@@ -74,15 +78,39 @@ noteで紹介する価値がある動画を5本選んでください。
 ・noteの記事として紹介しやすいか
 ・同じジャンルばかりになっていないか
 
-再生数が少ないことだけを理由に除外しないでください。
+重要なルール：
 
-特に、
+ニュース動画は最大1本までにしてください。
+
+5本すべてをニュース系にしないでください。
+
+できるだけ、
+
+・科学
+・雑学
+・テクノロジー
+・ゲーム
+・教育
+・面白い動画
+・レビュー
+・ドキュメンタリー
+・意外な発見
+・知られていない面白い動画
+
+など、ジャンルを分散してください。
+
+ただし、ニュース以外に本当に良い動画がない場合は、
+無理にジャンルを分散する必要はありません。
+
+また、
 
 「登録者数が少ないのに再生数が多い」
 「高評価率が高い」
 「投稿直後なのに急速に再生されている」
 
-ような動画を発掘してください。
+ような動画を積極的に発掘してください。
+
+再生数が少ないことだけを理由に除外しないでください。
 
 以下のような動画は優先度を下げてください。
 
@@ -91,13 +119,13 @@ noteで紹介する価値がある動画を5本選んでください。
 ・同じ内容のまとめ動画
 ・広告目的が強い動画
 
-必ず5本選んでください。
+最終的に5本選んでください。
 
-重要:
 回答はJSONだけにしてください。
-Markdownの```は絶対に付けないでください。
 
-形式:
+Markdownの```は付けないでください。
+
+必ず次の形式で回答してください。
 
 {
   "selected": [
@@ -113,7 +141,7 @@ Markdownの```は絶対に付けないでください。
 
 
 # ==========================================
-# Gemini Interactions API
+# Gemini API
 # ==========================================
 
 url = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -144,11 +172,7 @@ response = requests.post(
 
 if response.status_code != 200:
 
-    print(
-        "Gemini APIエラー:",
-        response.status_code
-    )
-
+    print("Gemini APIエラー:", response.status_code)
     print(response.text[:5000])
 
     raise RuntimeError(
@@ -158,31 +182,50 @@ if response.status_code != 200:
 
 data = response.json()
 
+print("Gemini APIから正常に回答を受信しました")
+
 
 # ==========================================
 # Geminiの回答を取得
+#
+# Interactions APIでは
+#
+# outputs
+#   ↓
+# model_output
+#   ↓
+# content
+#   ↓
+# text
+#
+# という構造になっている
 # ==========================================
 
-try:
+outputs = data.get("outputs", [])
 
-    outputs = data.get("outputs", [])
+text = None
 
-    text = None
+for output in outputs:
 
-    for output in outputs:
+    if output.get("type") == "model_output":
 
-        if output.get("type") == "text":
+        content = output.get("content", [])
 
-            text = output.get("text")
+        for item in content:
 
+            if item.get("type") == "text":
+
+                text = item.get("text")
+
+                break
+
+        if text:
             break
 
-    if not text:
-        raise ValueError(
-            "Geminiのテキスト回答がありません"
-        )
 
-except Exception:
+if not text:
+
+    print("Geminiから取得したデータ:")
 
     print(
         json.dumps(
@@ -192,10 +235,12 @@ except Exception:
         )
     )
 
-    raise
+    raise RuntimeError(
+        "Geminiのテキスト回答を取得できませんでした"
+    )
 
 
-print("Geminiから回答を受信しました")
+print("Geminiのテキスト回答を取得しました")
 
 
 # ==========================================
@@ -208,16 +253,36 @@ try:
 
 except json.JSONDecodeError:
 
-    print("Geminiの回答:")
-    print(text)
+    # Markdownの```が万一付いていた場合に除去
+    cleaned_text = text.strip()
 
-    raise RuntimeError(
-        "Geminiの回答をJSONとして読み取れませんでした"
-    )
+    if cleaned_text.startswith("```json"):
+        cleaned_text = cleaned_text[7:]
+
+    elif cleaned_text.startswith("```"):
+        cleaned_text = cleaned_text[3:]
+
+    if cleaned_text.endswith("```"):
+        cleaned_text = cleaned_text[:-3]
+
+    cleaned_text = cleaned_text.strip()
+
+    try:
+
+        result = json.loads(cleaned_text)
+
+    except json.JSONDecodeError:
+
+        print("Geminiの回答:")
+        print(text)
+
+        raise RuntimeError(
+            "Geminiの回答をJSONとして読み取れませんでした"
+        )
 
 
 # ==========================================
-# 実際の動画情報を付ける
+# 選ばれた動画を取得
 # ==========================================
 
 selected = []
@@ -243,7 +308,7 @@ for item in result.get("selected", []):
 
 
 # ==========================================
-# 最大5本
+# 5本まで
 # ==========================================
 
 selected = selected[:5]
@@ -257,7 +322,7 @@ if not selected:
 
 
 # ==========================================
-# 保存
+# selected.jsonに保存
 # ==========================================
 
 with open(
@@ -291,5 +356,12 @@ for i, video in enumerate(selected, 1):
     )
 
     print(
+        f"   チャンネル: {video.get('channel', '')}"
+    )
+
+    print(
         f"   理由: {video.get('ai_reason', '')}"
     )
+
+print("")
+print("selected.json を作成しました")
