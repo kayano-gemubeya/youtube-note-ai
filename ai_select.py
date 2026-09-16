@@ -8,19 +8,14 @@ OUTPUT_FILE = "selected.json"
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not API_KEY:
-    raise RuntimeError(
-        "GEMINI_API_KEY が設定されていません"
-    )
+    raise RuntimeError("GEMINI_API_KEY が設定されていません")
+
 
 # ==========================================
 # 候補動画を読み込む
 # ==========================================
 
-with open(
-    INPUT_FILE,
-    "r",
-    encoding="utf-8"
-) as f:
+with open(INPUT_FILE, "r", encoding="utf-8") as f:
     videos = json.load(f)
 
 print("================================")
@@ -29,9 +24,7 @@ print("候補動画:", len(videos))
 print("================================")
 
 if not videos:
-    raise RuntimeError(
-        "候補動画が0本です"
-    )
+    raise RuntimeError("候補動画が0本です")
 
 
 # ==========================================
@@ -81,8 +74,6 @@ noteで紹介する価値がある動画を5本選んでください。
 ・noteの記事として紹介しやすいか
 ・同じジャンルばかりになっていないか
 
-ニュースだけに偏らないようにしてください。
-
 再生数が少ないことだけを理由に除外しないでください。
 
 特に、
@@ -102,7 +93,9 @@ noteで紹介する価値がある動画を5本選んでください。
 
 必ず5本選んでください。
 
-出力はJSONだけにしてください。
+重要:
+回答はJSONだけにしてください。
+Markdownの```は絶対に付けないでください。
 
 形式:
 
@@ -123,17 +116,11 @@ noteで紹介する価値がある動画を5本選んでください。
 # Gemini Interactions API
 # ==========================================
 
-url = (
-    "https://generativelanguage.googleapis.com/"
-    "v1beta/interactions"
-)
+url = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 payload = {
     "model": "gemini-3.6-flash",
-    "input": prompt,
-    "generation_config": {
-        "response_mime_type": "application/json"
-    }
+    "input": prompt
 }
 
 headers = {
@@ -150,6 +137,11 @@ response = requests.post(
     timeout=120
 )
 
+
+# ==========================================
+# APIエラー確認
+# ==========================================
+
 if response.status_code != 200:
 
     print(
@@ -157,13 +149,12 @@ if response.status_code != 200:
         response.status_code
     )
 
-    print(
-        response.text[:5000]
-    )
+    print(response.text[:5000])
 
     raise RuntimeError(
         "Gemini APIの呼び出しに失敗しました"
     )
+
 
 data = response.json()
 
@@ -174,10 +165,7 @@ data = response.json()
 
 try:
 
-    outputs = data.get(
-        "outputs",
-        []
-    )
+    outputs = data.get("outputs", [])
 
     text = None
 
@@ -185,9 +173,7 @@ try:
 
         if output.get("type") == "text":
 
-            text = output.get(
-                "text"
-            )
+            text = output.get("text")
 
             break
 
@@ -207,6 +193,9 @@ except Exception:
     )
 
     raise
+
+
+print("Geminiから回答を受信しました")
 
 
 # ==========================================
@@ -233,38 +222,24 @@ except json.JSONDecodeError:
 
 selected = []
 
-for item in result.get(
-    "selected",
-    []
-):
+for item in result.get("selected", []):
 
-    number = item.get(
-        "candidate_number"
-    )
+    number = item.get("candidate_number")
 
-    if not isinstance(
-        number,
-        int
-    ):
+    if not isinstance(number, int):
         continue
 
     if number < 1 or number > len(videos):
         continue
 
-    video = videos[
-        number - 1
-    ].copy()
+    video = videos[number - 1].copy()
 
-    video[
-        "ai_reason"
-    ] = item.get(
+    video["ai_reason"] = item.get(
         "reason",
         ""
     )
 
-    selected.append(
-        video
-    )
+    selected.append(video)
 
 
 # ==========================================
@@ -299,16 +274,17 @@ with open(
     )
 
 
+# ==========================================
+# 結果表示
+# ==========================================
+
 print("")
 print("================================")
 print("AI選定完了")
 print("選ばれた動画:", len(selected))
 print("================================")
 
-for i, video in enumerate(
-    selected,
-    1
-):
+for i, video in enumerate(selected, 1):
 
     print(
         f"{i}. {video.get('title', '')}"
