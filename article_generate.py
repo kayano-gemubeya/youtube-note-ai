@@ -189,17 +189,29 @@ print("Gemini APIから正常に回答を受信しました")
 
 # ==========================================
 # Geminiのテキスト回答を取得
+#
+# Interactions APIでは
+#
+# steps
+#   ↓
+# model_output
+#   ↓
+# content
+#   ↓
+# text
+#
+# という構造になっている
 # ==========================================
 
-outputs = data.get("outputs", [])
+steps = data.get("steps", [])
 
 text = None
 
-for output in outputs:
+for step in steps:
 
-    if output.get("type") == "model_output":
+    if step.get("type") == "model_output":
 
-        content = output.get("content", [])
+        content = step.get("content", [])
 
         for item in content:
 
@@ -212,6 +224,10 @@ for output in outputs:
         if text:
             break
 
+
+# ==========================================
+# 回答が取得できなかった場合
+# ==========================================
 
 if not text:
 
@@ -228,6 +244,9 @@ if not text:
     raise RuntimeError(
         "Geminiのテキスト回答を取得できませんでした"
     )
+
+
+print("Geminiのテキスト回答を取得しました")
 
 
 # ==========================================
