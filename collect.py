@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import requests
 from datetime import datetime, timedelta, timezone
 
@@ -31,10 +32,36 @@ API_KEY = os.environ.get("YOUTUBE_API_KEY")
 
 if not API_KEY:
     raise RuntimeError(
-        "YOUTUBE_API_KEY がGitHub Secretsにありません"
+        "YOUTUBE_API_KEYがGitHub Secretsにありません"
     )
 
 BASE_URL = "https://www.googleapis.com/youtube/v3"
+
+# ==========================================
+# 日本語判定
+# ==========================================
+
+def has_japanese(text):
+    """
+    タイトル・説明などに日本語文字が含まれているか確認
+    """
+
+    if not text:
+        return False
+
+    # ひらがな
+    if re.search(r"[\u3040-\u309F]", text):
+        return True
+
+    # カタカナ
+    if re.search(r"[\u30A0-\u30FF]", text):
+        return True
+
+    # 日本語の漢字が含まれる場合
+    # 中国語だけの文章をなるべく除外するため、
+    # ひらがな・カタカナを優先する
+    return False
+
 
 # ==========================================
 # 日付
@@ -53,11 +80,13 @@ print("YouTube Data API 動画収集開始")
 print("対象期間:", published_after_text, "以降")
 print("================================")
 
+
 # ==========================================
 # 動画保存場所
 # ==========================================
 
 videos = {}
+
 
 # ==========================================
 # YouTube検索
@@ -108,28 +137,58 @@ for query in QUERIES:
 
             snippet = item["snippet"]
 
+            title = snippet.get(
+                "title",
+                ""
+            )
+
+            description = snippet.get(
+                "description",
+                ""
+            )
+
+            # ==================================
+            # 日本語タイトル判定
+            # ==================================
+
+            if not has_japanese(title):
+
+                print(
+                    "日本語タイトルではないため除外:",
+                    title[:60]
+                )
+
+                continue
+
+            # ==================================
+            # 同じ動画の重複を自動排除
+            # ==================================
+
             videos[video_id] = {
+
                 "video_id": video_id,
-                "title": snippet.get(
-                    "title",
-                    ""
-                ),
+
+                "title": title,
+
                 "channel": snippet.get(
                     "channelTitle",
                     ""
                 ),
+
                 "channel_id": snippet.get(
                     "channelId",
                     ""
                 ),
+
                 "upload_date": snippet.get(
                     "publishedAt",
                     ""
                 ),
-                "description": snippet.get(
-                    "description",
-                    ""
-                ),
+
+                "description": description,
+
+                "language": "ja",
+
                 "url": (
                     "https://www.youtube.com/watch?v="
                     + video_id
@@ -155,6 +214,7 @@ print("動画数:", len(videos))
 print("================================")
 
 video_ids = list(videos.keys())
+
 
 for start in range(
     0,
@@ -203,6 +263,51 @@ for start in range(
                 "snippet",
                 {}
             )
+
+            # ==================================
+            # YouTube側の言語情報
+            # ==================================
+
+            default_language = snippet.get(
+                "defaultLanguage",
+                ""
+            )
+
+            default_audio_language = snippet.get(
+                "defaultAudioLanguage",
+                ""
+            )
+
+            videos[video_id][
+                "default_language"
+            ] = default_language
+
+            videos[video_id][
+                "default_audio_language"
+            ] = default_audio_language
+
+            # ==================================
+            # 音声言語が明確に日本語以外なら除外
+            # ==================================
+
+            if default_audio_language:
+
+                if not default_audio_language.lower().startswith("ja"):
+
+                    print(
+                        "日本語音声ではないため除外:",
+                        videos[video_id]["title"],
+                        "| 音声言語:",
+                        default_audio_language
+                    )
+
+                    del videos[video_id]
+
+                    continue
+
+            # ==================================
+            # 再生数など
+            # ==================================
 
             videos[video_id][
                 "view_count"
@@ -275,6 +380,7 @@ channel_ids = list(
 
 channel_subscribers = {}
 
+
 for start in range(
     0,
     len(channel_ids),
@@ -339,6 +445,7 @@ for start in range(
 
 output = []
 
+
 for video in videos.values():
 
     if "view_count" not in video:
@@ -365,7 +472,10 @@ for video in videos.values():
         "comment_count"
     ]
 
-    # 高評価率
+    # ==================================
+    # 高評価率・コメント率
+    # ==================================
+
     if views > 0:
 
         video[
@@ -386,7 +496,11 @@ for video in videos.values():
             "comment_rate"
         ] = 0
 
+
+    # ==================================
     # 投稿からの経過時間
+    # ==================================
+
     try:
 
         upload_dt = datetime.fromisoformat(
@@ -409,7 +523,6 @@ for video in videos.values():
             "hours_since_upload"
         ] = hours
 
-        # 1時間あたり再生数
         video[
             "views_per_hour"
         ] = views / hours
@@ -424,7 +537,33 @@ for video in videos.values():
             "views_per_hour"
         ] = 0
 
+
     output.append(video)
+
+
+# ==========================================
+# 最終重複チェック
+# ==========================================
+
+unique_videos = {}
+
+for video in output:
+
+    video_id = video.get(
+        "video_id"
+    )
+
+    if not video_id:
+        continue
+
+    unique_videos[
+        video_id
+    ] = video
+
+
+output = list(
+    unique_videos.values()
+)
 
 
 # ==========================================
@@ -482,5 +621,7 @@ for i, video in enumerate(
         f"| 1時間再生 "
         f"{video['views_per_hour']:,.0f} "
         f"| 登録者 "
-        f"{video['subscriber_count']:,}"
+        f"{video['subscriber_count']:,} "
+        f"| 音声言語 "
+        f"{video.get('default_audio_language', '不明')}"
     )
