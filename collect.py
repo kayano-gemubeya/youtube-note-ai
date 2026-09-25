@@ -4,6 +4,7 @@ import re
 import requests
 from datetime import datetime, timedelta, timezone
 
+
 # ==========================================
 # 設定
 # ==========================================
@@ -24,6 +25,11 @@ QUERIES = [
 DAYS = 7
 RESULTS_PER_QUERY = 25
 
+# 動画時間の条件
+MIN_DURATION_SECONDS = 60
+MAX_DURATION_SECONDS = 20 * 60
+
+
 # ==========================================
 # APIキー
 # ==========================================
@@ -37,13 +43,14 @@ if not API_KEY:
 
 BASE_URL = "https://www.googleapis.com/youtube/v3"
 
+
 # ==========================================
 # 日本語判定
 # ==========================================
 
 def has_japanese(text):
     """
-    タイトル・説明などに日本語文字が含まれているか確認
+    タイトルなどに日本語文字が含まれているか確認
     """
 
     if not text:
@@ -57,10 +64,48 @@ def has_japanese(text):
     if re.search(r"[\u30A0-\u30FF]", text):
         return True
 
-    # 日本語の漢字が含まれる場合
-    # 中国語だけの文章をなるべく除外するため、
-    # ひらがな・カタカナを優先する
     return False
+
+
+# ==========================================
+# ISO 8601形式の動画時間を秒に変換
+#
+# 例:
+# PT13S       → 13秒
+# PT1M30S     → 90秒
+# PT12M45S    → 765秒
+# PT20M       → 1200秒
+# PT1H5M      → 3900秒
+# ==========================================
+
+def parse_duration(duration):
+    """
+    YouTube APIのISO 8601形式のdurationを秒に変換
+    """
+
+    if not duration:
+        return 0
+
+    match = re.fullmatch(
+        r"PT"
+        r"(?:(\d+)H)?"
+        r"(?:(\d+)M)?"
+        r"(?:(\d+)S)?",
+        duration
+    )
+
+    if not match:
+        return 0
+
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+
+    return (
+        hours * 3600
+        + minutes * 60
+        + seconds
+    )
 
 
 # ==========================================
@@ -78,6 +123,13 @@ published_after_text = published_after.strftime(
 print("================================")
 print("YouTube Data API 動画収集開始")
 print("対象期間:", published_after_text, "以降")
+print(
+    "動画時間:",
+    MIN_DURATION_SECONDS,
+    "秒以上 /",
+    MAX_DURATION_SECONDS // 60,
+    "分以内"
+)
 print("================================")
 
 
@@ -161,8 +213,36 @@ for query in QUERIES:
                 continue
 
             # ==================================
+            # URL
+            # ==================================
+
+            video_url = (
+                "https://www.youtube.com/watch?v="
+                + video_id
+            )
+
+            # ==================================
+            # Shorts URLを除外
+            #
+            # 通常のsearch APIでは通常URLになることが多いが、
+            # 念のためチェック
+            # ==================================
+
+            if "/shorts/" in video_url.lower():
+
+                print(
+                    "Shorts URLのため除外:",
+                    title[:60]
+                )
+
+                continue
+
+            # ==================================
             # 同じ動画の重複を自動排除
             # ==================================
+
+            if video_id in videos:
+                continue
 
             videos[video_id] = {
 
@@ -189,10 +269,7 @@ for query in QUERIES:
 
                 "language": "ja",
 
-                "url": (
-                    "https://www.youtube.com/watch?v="
-                    + video_id
-                ),
+                "url": video_url,
             }
 
     except Exception as e:
@@ -210,7 +287,7 @@ for query in QUERIES:
 print("")
 print("================================")
 print("動画詳細情報を取得中")
-print("動画数:", len(videos))
+print("候補動画数:", len(videos))
 print("================================")
 
 video_ids = list(videos.keys())
@@ -264,6 +341,68 @@ for start in range(
                 {}
             )
 
+            content_details = item.get(
+                "contentDetails",
+                {}
+            )
+
+            # ==================================
+            # 動画時間
+            # ==================================
+
+            duration = content_details.get(
+                "duration",
+                ""
+            )
+
+            duration_seconds = parse_duration(
+                duration
+            )
+
+            videos[video_id][
+                "duration"
+            ] = duration
+
+            videos[video_id][
+                "duration_seconds"
+            ] = duration_seconds
+
+            # ==================================
+            # 60秒未満を除外
+            # ==================================
+
+            if duration_seconds < MIN_DURATION_SECONDS:
+
+                print(
+                    "60秒未満のため除外:",
+                    videos[video_id]["title"][:60],
+                    "|",
+                    duration_seconds,
+                    "秒"
+                )
+
+                del videos[video_id]
+
+                continue
+
+            # ==================================
+            # 20分超を除外
+            # ==================================
+
+            if duration_seconds > MAX_DURATION_SECONDS:
+
+                print(
+                    "20分超のため除外:",
+                    videos[video_id]["title"][:60],
+                    "|",
+                    duration_seconds,
+                    "秒"
+                )
+
+                del videos[video_id]
+
+                continue
+
             # ==================================
             # YouTube側の言語情報
             # ==================================
@@ -296,7 +435,7 @@ for start in range(
 
                     print(
                         "日本語音声ではないため除外:",
-                        videos[video_id]["title"],
+                        videos[video_id]["title"][:60],
                         "| 音声言語:",
                         default_audio_language
                     )
@@ -334,16 +473,6 @@ for start in range(
                     "commentCount",
                     0
                 )
-            )
-
-            videos[video_id][
-                "duration"
-            ] = item.get(
-                "contentDetails",
-                {}
-            ).get(
-                "duration",
-                ""
             )
 
             videos[video_id][
@@ -496,7 +625,6 @@ for video in videos.values():
             "comment_rate"
         ] = 0
 
-
     # ==================================
     # 投稿からの経過時間
     # ==================================
@@ -523,9 +651,15 @@ for video in videos.values():
             "hours_since_upload"
         ] = hours
 
+        # 1時間あたり再生数
         video[
             "views_per_hour"
         ] = views / hours
+
+        # 1日あたり再生数
+        video[
+            "views_per_day"
+        ] = views / (hours / 24)
 
     except Exception:
 
@@ -537,6 +671,9 @@ for video in videos.values():
             "views_per_hour"
         ] = 0
 
+        video[
+            "views_per_day"
+        ] = 0
 
     output.append(video)
 
@@ -618,10 +755,14 @@ for i, video in enumerate(
         f"{video['view_count']:,} "
         f"| 高評価率 "
         f"{video['like_rate']:.2%} "
+        f"| コメント率 "
+        f"{video['comment_rate']:.2%} "
         f"| 1時間再生 "
         f"{video['views_per_hour']:,.0f} "
         f"| 登録者 "
         f"{video['subscriber_count']:,} "
+        f"| 動画時間 "
+        f"{video['duration_seconds']}秒 "
         f"| 音声言語 "
         f"{video.get('default_audio_language', '不明')}"
     )
